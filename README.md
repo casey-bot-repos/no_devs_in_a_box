@@ -18,10 +18,9 @@ That's the whole install. The only thing it needs on your host is Docker
 CLI, no Claude Code CLI. Everything that touches code, GitHub, or a browser
 runs inside the container it builds. The installer will:
 1. Install Docker if it's missing, then build the factory image.
-2. Ask for a GitHub token (`repo` + `issues` scopes), how to authenticate
-   Claude — your subscription (it runs `claude setup-token` for you inside a
-   container, no separate API billing) or an Anthropic API key — and the
-   target repo (`owner/name`).
+2. Ask for a GitHub token (`repo` + `issues` scopes) and the target repo
+   (`owner/name`), then run `claude setup-token` for you inside a container
+   to authenticate against your Claude subscription — no separate API key.
 3. Start the factory container.
 
 Then just work your GitHub Issues as usual — open one, and the factory picks
@@ -122,9 +121,9 @@ download, which the container has the network access to do anyway.
 
 Claude Code runs inside the container with `--dangerously-skip-permissions`.
 This is deliberate: the container itself — no host filesystem access beyond
-the mounted `/work` volume, no secrets beyond a scoped `GITHUB_TOKEN` and a
-Claude credential (`ANTHROPIC_API_KEY` or `CLAUDE_CODE_OAUTH_TOKEN`) — is
-the safety boundary, not per-action permission prompts. Worst case, a bad turn is contained to the work volume and
+the mounted `/work` volume, no secrets beyond a scoped `GITHUB_TOKEN` and
+`CLAUDE_CODE_OAUTH_TOKEN` — is the safety boundary, not per-action
+permission prompts. Worst case, a bad turn is contained to the work volume and
 recoverable with `git reset`. Don't relax this expecting *more* safety by
 switching to prompted permissions; the container boundary is what's actually
 doing the work either way.
@@ -163,22 +162,19 @@ reset when a new window starts, and are lost only if that volume is wiped.
 See `.env.example`. Key variables: `GITHUB_TOKEN`, `TARGET_REPO`,
 `POLL_INTERVAL_SECONDS`, `MAX_RETRIES`, `DRY_RUN`,
 `WORK_WINDOW_START`/`WORK_WINDOW_END`/`TZ`, `MAX_SPEND_PER_WINDOW`, and
-exactly one of `ANTHROPIC_API_KEY` or `CLAUDE_CODE_OAUTH_TOKEN`:
+`CLAUDE_CODE_OAUTH_TOKEN`.
 
-- **`ANTHROPIC_API_KEY`** — a key from console.anthropic.com, billed as API
-  usage.
-- **`CLAUDE_CODE_OAUTH_TOKEN`** — bills against a Claude Pro/Max
-  subscription instead. Generate it by running, inside a container built
-  from this image:
-  ```bash
-  docker compose run --rm --entrypoint claude orchestrator setup-token
-  ```
-  (`--entrypoint claude` is required — this image's default entrypoint is
-  the poll loop, not the bare `claude` CLI.) `install.sh` offers to run this
-  step for you and prompts you to paste the resulting token. It's
-  long-lived but not necessarily permanent — if the factory's selfcheck
-  ever starts failing auth with no other change, re-run `setup-token` and
-  update `.env`.
+`CLAUDE_CODE_OAUTH_TOKEN` bills against a Claude Pro/Max subscription
+(rather than a separate API key). Generate it by running, inside a
+container built from this image:
+```bash
+docker compose run --rm --entrypoint claude orchestrator setup-token
+```
+(`--entrypoint claude` is required — this image's default entrypoint is the
+poll loop, not the bare `claude` CLI.) `install.sh` runs this step for you
+and prompts you to paste the resulting token. It's long-lived but not
+necessarily permanent — if the factory's selfcheck ever starts failing auth
+with no other change, re-run `setup-token` and update `.env`.
 
 ## Dry-run mode
 

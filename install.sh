@@ -60,35 +60,19 @@ fetch_source() {
   cd "$INSTALL_DIR"
 }
 
-# Populates ANTHROPIC_API_KEY and/or CLAUDE_CODE_OAUTH_TOKEN (exactly one
-# gets a real value) for write_env below. Requires the image to already be
-# built, since the subscription path runs `claude` inside a one-off
-# container from it.
+# Populates CLAUDE_CODE_OAUTH_TOKEN for write_env below by running
+# `claude setup-token` inside a one-off container built from this image —
+# bills against a Claude Pro/Max subscription, no separate API key needed.
 prompt_auth() {
-  ANTHROPIC_API_KEY=""
-  CLAUDE_CODE_OAUTH_TOKEN=""
-
+  log "Running 'claude setup-token' inside a container — follow its prompts (it may print a URL to open in your browser)."
+  # --entrypoint overrides this image's fixed ENTRYPOINT (the poll loop), so
+  # this actually runs `claude setup-token` instead of starting the
+  # factory. < /dev/tty attaches the real terminal, not this script's own
+  # (possibly piped) stdin.
+  docker compose run --rm --entrypoint claude orchestrator setup-token < /dev/tty
   echo
-  echo "How should the factory authenticate to Claude?"
-  echo "  1) Your Claude subscription (Pro/Max), via 'claude setup-token' — no separate API billing"
-  echo "  2) An Anthropic API key from console.anthropic.com"
-  local choice
-  read -rp "Choice [1/2]: " choice < /dev/tty
-
-  if [[ "$choice" == "1" ]]; then
-    log "Running 'claude setup-token' inside a container — follow its prompts (it may print a URL to open in your browser)."
-    # --entrypoint overrides this image's fixed ENTRYPOINT (the poll loop),
-    # so this actually runs `claude setup-token` instead of starting the
-    # factory. < /dev/tty attaches the real terminal, not this script's own
-    # (possibly piped) stdin.
-    docker compose run --rm --entrypoint claude orchestrator setup-token < /dev/tty
-    echo
-    read -rsp "Paste the token 'claude setup-token' printed above: " CLAUDE_CODE_OAUTH_TOKEN < /dev/tty
-    echo
-  else
-    read -rsp "Anthropic API key: " ANTHROPIC_API_KEY < /dev/tty
-    echo
-  fi
+  read -rsp "Paste the token 'claude setup-token' printed above: " CLAUDE_CODE_OAUTH_TOKEN < /dev/tty
+  echo
 }
 
 prompt_config() {
@@ -104,7 +88,6 @@ prompt_config() {
 
   cat > .env <<EOF
 GITHUB_TOKEN=${gh_token}
-ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
 CLAUDE_CODE_OAUTH_TOKEN=${CLAUDE_CODE_OAUTH_TOKEN}
 TARGET_REPO=${target_repo}
 POLL_INTERVAL_SECONDS=${poll_interval}

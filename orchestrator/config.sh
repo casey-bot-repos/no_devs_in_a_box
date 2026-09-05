@@ -6,16 +6,8 @@ set -euo pipefail
 
 : "${GITHUB_TOKEN:?GITHUB_TOKEN must be set}"
 : "${TARGET_REPO:?TARGET_REPO must be set (owner/name)}"
-
-# Either credential works -- `claude` reads whichever is present. API key
-# for console.anthropic.com billing, OAuth token (from `claude setup-token`)
-# to bill against a Claude subscription instead.
-ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY:-}"
-CLAUDE_CODE_OAUTH_TOKEN="${CLAUDE_CODE_OAUTH_TOKEN:-}"
-if [[ -z "$ANTHROPIC_API_KEY" && -z "$CLAUDE_CODE_OAUTH_TOKEN" ]]; then
-  echo "Either ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN must be set" >&2
-  exit 1
-fi
+# From `claude setup-token` -- bills against a Claude Pro/Max subscription.
+: "${CLAUDE_CODE_OAUTH_TOKEN:?CLAUDE_CODE_OAUTH_TOKEN must be set (run: docker compose run --rm --entrypoint claude orchestrator setup-token)}"
 
 POLL_INTERVAL_SECONDS="${POLL_INTERVAL_SECONDS:-300}"
 MAX_RETRIES="${MAX_RETRIES:-3}"
@@ -58,7 +50,7 @@ STAGE_LABELS=(
 # `gh` reads GH_TOKEN for auth — every script that sources this file gets it.
 export GH_TOKEN="${GITHUB_TOKEN}"
 
-export GITHUB_TOKEN ANTHROPIC_API_KEY CLAUDE_CODE_OAUTH_TOKEN TARGET_REPO POLL_INTERVAL_SECONDS MAX_RETRIES DRY_RUN
+export GITHUB_TOKEN CLAUDE_CODE_OAUTH_TOKEN TARGET_REPO POLL_INTERVAL_SECONDS MAX_RETRIES DRY_RUN
 export WORK_WINDOW_START WORK_WINDOW_END MAX_SPEND_PER_WINDOW
 export FACTORY_ROOT ROLES_DIR WORK_DIR REPO_DIR
 export LABEL_NEEDS_PLAN LABEL_PLANNED LABEL_IN_PROGRESS LABEL_NEEDS_TESTS LABEL_NEEDS_REVIEW \
