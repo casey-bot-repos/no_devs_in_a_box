@@ -2,14 +2,14 @@
 # no_devs_in_a_box installer: installs Docker if needed, collects config,
 # builds and starts the factory.
 #
-# Usage (once pushed to GitHub):
-#   curl -fsSL https://raw.githubusercontent.com/<owner>/no_devs_in_a_box/main/install.sh | bash
-# Or, from an existing checkout:
-#   ./install.sh
+# Usage, from an existing checkout (this repo is currently private, so
+# `git clone` needs your own GitHub credentials already configured — the
+# curl-pipe-bash one-liner only works once/if the repo is made public):
+#   git clone https://github.com/casey-bot-repos/no_devs_in_a_box.git
+#   cd no_devs_in_a_box && ./install.sh
 set -euo pipefail
 
-# TODO: update once this repo has a GitHub home.
-REPO_URL="${NO_DEVS_REPO_URL:-https://github.com/REPLACE_ME/no_devs_in_a_box.git}"
+REPO_URL="${NO_DEVS_REPO_URL:-https://github.com/casey-bot-repos/no_devs_in_a_box.git}"
 INSTALL_DIR="${NO_DEVS_INSTALL_DIR:-$HOME/.no_devs_in_a_box}"
 
 log() { echo "[install] $*"; }

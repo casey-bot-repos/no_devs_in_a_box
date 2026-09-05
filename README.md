@@ -10,9 +10,13 @@ PRs on your repo.
 ## Quickstart
 
 ```bash
-git clone <this repo> && cd no_devs_in_a_box
+git clone https://github.com/casey-bot-repos/no_devs_in_a_box.git
+cd no_devs_in_a_box
 ./install.sh
 ```
+
+(This repo is currently private — `git clone` needs your own GitHub
+credentials configured first.)
 
 The installer will:
 1. Install Docker if it's missing.
