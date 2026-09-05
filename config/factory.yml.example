@@ -1,0 +1,10 @@
+# Copy this to .github/factory.yml in the TARGET repo (not this tool's own
+# repo) to override factory defaults for that project.
+
+# Merge PRs automatically once tests pass and the reviewer stage approves.
+# Default: false — every change waits for a human to click merge.
+auto_merge_default: false
+
+# Per-issue overrides, regardless of the default above:
+#   label `auto-merge`    -> merge this issue's PR automatically
+#   label `no-auto-merge` -> never auto-merge this issue's PR
