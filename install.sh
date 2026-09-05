@@ -5,6 +5,10 @@
 # Claude Code CLI. Everything that actually touches code, GitHub, or a
 # browser runs inside the container this script builds and starts.
 #
+# All prompts read from /dev/tty explicitly, not stdin — required for the
+# curl-pipe-bash form below, where stdin is the downloaded script itself,
+# not your keyboard.
+#
 # Usage:
 #   curl -fsSL https://raw.githubusercontent.com/casey-bot-repos/no_devs_in_a_box/main/install.sh | bash
 # Or, from an existing checkout:
@@ -56,23 +60,52 @@ fetch_source() {
   cd "$INSTALL_DIR"
 }
 
-prompt_config() {
-  if [[ -f .env ]]; then
-    log ".env already exists — leaving it as-is. Delete it first to reconfigure."
-    return
+# Populates ANTHROPIC_API_KEY and/or CLAUDE_CODE_OAUTH_TOKEN (exactly one
+# gets a real value) for write_env below. Requires the image to already be
+# built, since the subscription path runs `claude` inside a one-off
+# container from it.
+prompt_auth() {
+  ANTHROPIC_API_KEY=""
+  CLAUDE_CODE_OAUTH_TOKEN=""
+
+  echo
+  echo "How should the factory authenticate to Claude?"
+  echo "  1) Your Claude subscription (Pro/Max), via 'claude setup-token' — no separate API billing"
+  echo "  2) An Anthropic API key from console.anthropic.com"
+  local choice
+  read -rp "Choice [1/2]: " choice < /dev/tty
+
+  if [[ "$choice" == "1" ]]; then
+    log "Running 'claude setup-token' inside a container — follow its prompts (it may print a URL to open in your browser)."
+    # --entrypoint overrides this image's fixed ENTRYPOINT (the poll loop),
+    # so this actually runs `claude setup-token` instead of starting the
+    # factory. < /dev/tty attaches the real terminal, not this script's own
+    # (possibly piped) stdin.
+    docker compose run --rm --entrypoint claude orchestrator setup-token < /dev/tty
+    echo
+    read -rsp "Paste the token 'claude setup-token' printed above: " CLAUDE_CODE_OAUTH_TOKEN < /dev/tty
+    echo
+  else
+    read -rsp "Anthropic API key: " ANTHROPIC_API_KEY < /dev/tty
+    echo
   fi
+}
+
+prompt_config() {
   log "Let's configure the factory."
-  read -rp "GitHub token (repo + issues scopes): " gh_token
-  read -rsp "Anthropic API key: " anthropic_key; echo
-  read -rp "Target repo (owner/name): " target_repo
-  read -rp "Poll interval in seconds [300]: " poll_interval
+  local gh_token target_repo poll_interval max_retries
+  read -rp "GitHub token (repo + issues scopes): " gh_token < /dev/tty
+  prompt_auth
+  read -rp "Target repo (owner/name): " target_repo < /dev/tty
+  read -rp "Poll interval in seconds [300]: " poll_interval < /dev/tty
   poll_interval="${poll_interval:-300}"
-  read -rp "Max retries per stage [3]: " max_retries
+  read -rp "Max retries per stage [3]: " max_retries < /dev/tty
   max_retries="${max_retries:-3}"
 
   cat > .env <<EOF
 GITHUB_TOKEN=${gh_token}
-ANTHROPIC_API_KEY=${anthropic_key}
+ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+CLAUDE_CODE_OAUTH_TOKEN=${CLAUDE_CODE_OAUTH_TOKEN}
 TARGET_REPO=${target_repo}
 POLL_INTERVAL_SECONDS=${poll_interval}
 MAX_RETRIES=${max_retries}
@@ -86,10 +119,24 @@ main() {
   ensure_docker
   ensure_docker_permissions
   fetch_source
-  prompt_config
 
-  log "Building and starting the factory..."
+  local needs_config=1
+  [[ -f .env ]] && needs_config=0
+  # A placeholder so `docker compose build`/`run` never choke on a missing
+  # env_file — prompt_config (below) overwrites it with real values before
+  # the factory actually starts.
+  [[ "$needs_config" -eq 1 ]] && : > .env
+
+  log "Building the factory image..."
   docker compose build
+
+  if [[ "$needs_config" -eq 1 ]]; then
+    prompt_config
+  else
+    log ".env already exists — leaving it as-is. Delete it first to reconfigure."
+  fi
+
+  log "Starting the factory..."
   docker compose up -d
 
   log "Factory running against ${INSTALL_DIR}."

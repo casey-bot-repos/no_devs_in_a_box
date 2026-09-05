@@ -22,7 +22,7 @@ fi
 echo "selfcheck: verifying claude CLI is authenticated..."
 if ! claude -p "reply with just the word ok" --output-format json --max-turns 1 \
      | jq -e '.is_error == false' >/dev/null 2>&1; then
-  echo "selfcheck FAILED: claude CLI could not complete a basic call — check ANTHROPIC_API_KEY" >&2
+  echo "selfcheck FAILED: claude CLI could not complete a basic call — check ANTHROPIC_API_KEY / CLAUDE_CODE_OAUTH_TOKEN" >&2
   exit 1
 fi
 
