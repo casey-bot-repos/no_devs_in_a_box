@@ -18,9 +18,13 @@ That's the whole install. The only thing it needs on your host is Docker
 CLI, no Claude Code CLI. Everything that touches code, GitHub, or a browser
 runs inside the container it builds. The installer will:
 1. Install Docker if it's missing, then build the factory image.
-2. Ask for a GitHub token (`repo` + `issues` scopes) and the target repo
-   (`owner/name`), then run `claude setup-token` for you inside a container
-   to authenticate against your Claude subscription — no separate API key.
+2. Walk you through setting up the target repo and a scoped token for
+   it — via direct, pre-filled links into GitHub's own UI (repo name,
+   token permissions, and expiration all pre-set; GitHub doesn't support
+   pre-selecting *which* repo the token covers via URL, so that one click
+   is manual), not a wall of "go find these checkboxes" instructions.
+3. Run `claude setup-token` for you inside a container, to authenticate
+   against your Claude subscription — no separate API key.
 3. Start the factory container.
 
 Then just work your GitHub Issues as usual — open one, and the factory picks

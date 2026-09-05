@@ -60,6 +60,38 @@ fetch_source() {
   cd "$INSTALL_DIR"
 }
 
+# Pure-bash percent-encoding — no jq/python on the host per this script's
+# own zero-dependency premise, so no shelling out to encode a query param.
+urlencode() {
+  local s="$1" out="" c i
+  for (( i=0; i<${#s}; i++ )); do
+    c="${s:i:1}"
+    case "$c" in
+      [a-zA-Z0-9.~_-]) out+="$c" ;;
+      ' ') out+="+" ;;
+      *) out+="$(printf '%%%02X' "'$c")" ;;
+    esac
+  done
+  printf '%s' "$out"
+}
+
+# Deep-links into GitHub's own UI, pre-filled as far as GitHub's documented
+# query parameters allow, rather than describing which settings pages and
+# checkboxes to go find manually.
+print_repo_create_link() {
+  local suggested_name="$1"
+  echo "  https://github.com/new?name=$(urlencode "$suggested_name")&visibility=private"
+}
+
+print_pat_create_link() {
+  local target_repo="$1"
+  local desc="no_devs_in_a_box factory access for ${target_repo}"
+  echo "  https://github.com/settings/personal-access-tokens/new?name=no_devs_in_a_box&description=$(urlencode "$desc")&expires_in=90&contents=write&issues=write&pull_requests=write"
+  echo "  (adjust the expiration if you'd like something other than 90 days)"
+  echo "  GitHub can't pre-select which repo via URL -- when it asks, choose"
+  echo "  \"Only select repositories\" and pick: ${target_repo}"
+}
+
 # Populates CLAUDE_CODE_OAUTH_TOKEN for write_env below by running
 # `claude setup-token` inside a one-off container built from this image —
 # bills against a Claude Pro/Max subscription, no separate API key needed.
@@ -77,10 +109,28 @@ prompt_auth() {
 
 prompt_config() {
   log "Let's configure the factory."
-  local gh_token target_repo poll_interval max_retries
-  read -rp "GitHub token (repo + issues scopes): " gh_token < /dev/tty
+  local gh_token target_repo poll_interval max_retries has_repo repo_name
+
+  read -rp "Do you already have a target repo? [y/N]: " has_repo < /dev/tty
+  if [[ "${has_repo,,}" == "y" ]]; then
+    read -rp "Target repo (owner/name): " target_repo < /dev/tty
+  else
+    read -rp "Name for the new repo: " repo_name < /dev/tty
+    echo
+    echo "Create it here (pre-filled — just review and click 'Create repository'):"
+    print_repo_create_link "$repo_name"
+    echo
+    read -rp "Once it's created, paste its owner/name here: " target_repo < /dev/tty
+  fi
+
+  echo
+  echo "Now a token scoped to that repo. Create it here (name/description/expiration/permissions pre-filled):"
+  print_pat_create_link "$target_repo"
+  echo
+  read -rsp "Paste the generated token: " gh_token < /dev/tty
+  echo
+
   prompt_auth
-  read -rp "Target repo (owner/name): " target_repo < /dev/tty
   read -rp "Poll interval in seconds [300]: " poll_interval < /dev/tty
   poll_interval="${poll_interval:-300}"
   read -rp "Max retries per stage [3]: " max_retries < /dev/tty
