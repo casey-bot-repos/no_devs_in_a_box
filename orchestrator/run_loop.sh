@@ -4,7 +4,7 @@
 # compose logs`, and `restart: unless-stopped` handles crash recovery.
 set -euo pipefail
 FACTORY_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# shellcheck source=./config.sh
+# shellcheck source=orchestrator/config.sh
 source "${FACTORY_ROOT}/config.sh"
 
 echo "no_devs_in_a_box: polling ${TARGET_REPO} every ${POLL_INTERVAL_SECONDS}s"

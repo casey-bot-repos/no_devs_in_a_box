@@ -4,7 +4,7 @@
 set -euo pipefail
 
 TOOL_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-# shellcheck source=../orchestrator/config.sh
+# shellcheck source=orchestrator/config.sh
 source "${TOOL_ROOT}/orchestrator/config.sh"
 
 echo "selfcheck: verifying GitHub auth..."

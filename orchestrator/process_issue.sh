@@ -7,17 +7,17 @@
 set -euo pipefail
 
 FACTORY_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# shellcheck source=./config.sh
+# shellcheck source=orchestrator/config.sh
 source "${FACTORY_ROOT}/config.sh"
-# shellcheck source=./lib/github.sh
+# shellcheck source=orchestrator/lib/github.sh
 source "${FACTORY_ROOT}/lib/github.sh"
-# shellcheck source=./lib/state.sh
+# shellcheck source=orchestrator/lib/state.sh
 source "${FACTORY_ROOT}/lib/state.sh"
-# shellcheck source=./lib/git.sh
+# shellcheck source=orchestrator/lib/git.sh
 source "${FACTORY_ROOT}/lib/git.sh"
-# shellcheck source=./lib/claude_invoke.sh
+# shellcheck source=orchestrator/lib/claude_invoke.sh
 source "${FACTORY_ROOT}/lib/claude_invoke.sh"
-# shellcheck source=./lib/schedule.sh
+# shellcheck source=orchestrator/lib/schedule.sh
 source "${FACTORY_ROOT}/lib/schedule.sh"
 
 mkdir -p "$WORK_DIR"

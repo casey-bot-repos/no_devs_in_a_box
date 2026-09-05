@@ -41,6 +41,9 @@ LABEL_PAUSED="factory:paused"
 
 # All labels the factory treats as mutually-exclusive "stage" labels — exactly
 # one of these (or none, for a brand new issue) should be present at a time.
+# shellcheck disable=SC2034 # consumed by lib/github.sh's gh_set_stage_label,
+# a sibling file this one doesn't itself source -- a real false positive,
+# not an actually-unused variable.
 STAGE_LABELS=(
   "$LABEL_NEEDS_PLAN" "$LABEL_PLANNED" "$LABEL_IN_PROGRESS"
   "$LABEL_NEEDS_TESTS" "$LABEL_NEEDS_REVIEW" "$LABEL_CHANGES_REQUESTED"

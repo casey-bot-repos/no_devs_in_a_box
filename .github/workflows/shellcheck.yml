@@ -10,6 +10,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Run ShellCheck
+        # -x follows `source` statements across files so cross-file variable
+        # usage resolves correctly (e.g. STAGE_LABELS, defined in config.sh,
+        # consumed in lib/github.sh). Every file is still listed explicitly
+        # so each one's own content gets fully checked in its own right --
+        # -x alone, without a file also being an explicit target, only uses
+        # it for symbol resolution and skips diagnosing its own lines.
+        # The `# shellcheck source=` directives on every `source` line are
+        # written relative to the repo root, matching this working
+        # directory -- -x resolves them relative to cwd, not the file being
+        # checked, so get this wrong and you're back to SC1091 spam.
         run: |
           shopt -s globstar
-          shellcheck install.sh docker/entrypoint.sh scripts/*.sh orchestrator/*.sh orchestrator/lib/*.sh
+          shellcheck -x install.sh docker/entrypoint.sh scripts/*.sh orchestrator/*.sh orchestrator/lib/*.sh
