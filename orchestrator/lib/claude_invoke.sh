@@ -12,11 +12,14 @@
 # Runs the role's system prompt + given prompt against $REPO_DIR as cwd.
 # Prints the assistant's final result text on stdout; the full JSON result
 # goes to stderr for logging. Returns non-zero if the CLI failed or the
-# response's is_error flag was set.
+# response's is_error flag was set. Every call's reported cost is added to
+# the current window's spend total (see lib/schedule.sh), win or lose —
+# tracking happens here so it's centralized regardless of which role or
+# stage is calling.
 claude_invoke() {
   local role="$1" prompt="$2"
   local system_prompt_file="${ROLES_DIR}/${role}/SYSTEM_PROMPT.md"
-  local raw
+  local raw cost
 
   if [[ ! -f "$system_prompt_file" ]]; then
     echo "no system prompt for role: $role" >&2
@@ -30,6 +33,13 @@ claude_invoke() {
     --max-turns 40)"
 
   echo "$raw" >&2
+
+  # Relies on `total_cost_usd` in the CLI's JSON output; if a future/older
+  # CLI version omits it, budget_add's `// 0` fallback just makes spend
+  # tracking inert rather than wrong — worth confirming against your
+  # installed `claude` version if MAX_SPEND_PER_WINDOW matters to you.
+  cost="$(echo "$raw" | jq -r '.total_cost_usd // 0')"
+  budget_add "$cost"
 
   if [[ "$(echo "$raw" | jq -r '.is_error // false')" == "true" ]]; then
     echo "claude invocation for role '$role' reported an error" >&2

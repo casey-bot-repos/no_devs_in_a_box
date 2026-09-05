@@ -21,15 +21,49 @@ gh_list_issues_json() {
     --json number,title,body,labels,comments,updatedAt --limit 100
 }
 
-# Print issue numbers actionable this cycle, oldest-updated first. `blocked`
-# and `factory:paused` issues are terminal/human-held and never picked up.
-gh_list_actionable_issues() {
-  gh_list_issues_json | jq -r '
+# The issue currently mid-pipeline, if any — one of the six "active" stage
+# labels, excluding `blocked` and `factory:paused`. Normally at most one
+# issue is ever active at a time (the factory drains one issue fully,
+# through every stage, before starting the next); if a human manually
+# labels more than one this way, the oldest-updated one wins and the rest
+# wait their turn.
+gh_pick_active_issue() {
+  gh_list_issues_json | jq -r --argjson active \
+    '["needs-plan","planned","in-progress","needs-tests","needs-review","changes-requested"]' '
     map(select(
-      (.labels | map(.name) | index("factory:paused") | not)
-      and (.labels | map(.name) | index("blocked") | not)
+      (.labels | map(.name)) as $l
+      | ($l | index("factory:paused") | not)
+      and ($l | index("blocked") | not)
+      and ([$l[] | . as $x | $active | index($x)] | any)
     ))
     | sort_by(.updatedAt)
+    | (.[0].number // empty)
+  '
+}
+
+# The next issue to start, once nothing is active: the oldest (by issue
+# number) open issue carrying none of the factory's managed labels yet.
+# `ready-to-merge` and `blocked` issues are excluded on purpose — they're
+# resting states a human (or the merge sweep) handles, not "unclaimed work".
+gh_pick_new_issue() {
+  gh_list_issues_json | jq -r --argjson managed \
+    '["needs-plan","planned","in-progress","needs-tests","needs-review","changes-requested","ready-to-merge","blocked"]' '
+    map(select(
+      (.labels | map(.name)) as $l
+      | ($l | index("factory:paused") | not)
+      and ([$l[] | . as $x | $managed | index($x)] | any | not)
+    ))
+    | sort_by(.number)
+    | (.[0].number // empty)
+  '
+}
+
+# Every issue currently sitting at `ready-to-merge`, regardless of whether
+# it's the "active" one — merge-checking is free (no Claude calls), so it
+# runs every cycle for all of them, independent of which issue is active.
+gh_list_ready_to_merge() {
+  gh_list_issues_json | jq -r '
+    map(select(.labels | map(.name) | index("ready-to-merge")))
     | .[].number
   '
 }
@@ -96,6 +130,9 @@ gh_create_pr() {
 
 gh_merge_pr() {
   local pr_num="$1"
+  # Caller must check the return code — a merge conflict, branch protection
+  # rule, or unmet required check all show up as a non-zero exit here, and
+  # this is silent about *why* on purpose (the caller surfaces it to GitHub).
   _gh_mutate pr merge "$pr_num" --repo "$TARGET_REPO" --squash --delete-branch
 }
 

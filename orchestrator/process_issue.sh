@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# Single poll cycle: pick the next actionable issue and advance it exactly
-# one pipeline stage. Called repeatedly by run_loop.sh. Always resolves to
-# either a clean stage transition or `blocked` + a diagnostic comment —
-# never leaves an issue in an ambiguous mid-stage state.
+# Single poll cycle. Drains one issue through the pipeline, one stage per
+# cycle, until it resolves (blocked, or done) before starting the next —
+# see main() at the bottom. Always resolves to either a clean stage
+# transition or `blocked` + a diagnostic comment — never leaves an issue in
+# an ambiguous mid-stage state.
 set -euo pipefail
 
 FACTORY_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -16,6 +17,8 @@ source "${FACTORY_ROOT}/lib/state.sh"
 source "${FACTORY_ROOT}/lib/git.sh"
 # shellcheck source=./lib/claude_invoke.sh
 source "${FACTORY_ROOT}/lib/claude_invoke.sh"
+# shellcheck source=./lib/schedule.sh
+source "${FACTORY_ROOT}/lib/schedule.sh"
 
 mkdir -p "$WORK_DIR"
 git_ensure_repo
@@ -270,10 +273,26 @@ stage_merge_check() {
   fi
 
   if [[ "$(effective_auto_merge "$issue_num")" == "true" ]]; then
-    gh_merge_pr "$(echo "$pr" | jq -r '.number')"
-    gh_comment "$issue_num" "✅ Auto-merged (auto-merge policy in effect for this issue)."
-    gh_close_issue "$issue_num"
+    if gh_merge_pr "$(echo "$pr" | jq -r '.number')"; then
+      gh_comment "$issue_num" "✅ Auto-merged (auto-merge policy in effect for this issue)."
+      gh_close_issue "$issue_num"
+    else
+      # Don't retry blindly forever (e.g. a real merge conflict won't fix
+      # itself) — drop back to a plain human-merge and say why.
+      gh_comment "$issue_num" "⚠️ Auto-merge failed — likely a merge conflict, branch protection rule, or unmet required check. Falling back to manual merge; a human needs to look at the PR and resolve/merge it directly."
+      gh_remove_label "$issue_num" "$LABEL_AUTO_MERGE"
+    fi
   fi
+}
+
+# Every ready-to-merge issue gets checked every cycle, regardless of which
+# issue is "active" below — this costs no Claude calls, so there's no
+# reason to make a finished PR wait its turn behind whatever's being worked.
+sweep_ready_to_merge() {
+  local n
+  for n in $(gh_list_ready_to_merge); do
+    stage_merge_check "$n"
+  done
 }
 
 process_one_issue() {
@@ -287,9 +306,7 @@ process_one_issue() {
 
   echo "[$(date -u +%FT%TZ)] processing issue #${issue_num}: ${title}"
 
-  if echo "$labels" | grep -qxF "$LABEL_READY_TO_MERGE"; then
-    stage_merge_check "$issue_num"
-  elif echo "$labels" | grep -qxF "$LABEL_NEEDS_REVIEW"; then
+  if echo "$labels" | grep -qxF "$LABEL_NEEDS_REVIEW"; then
     stage_reviewer "$issue_num" "$title"
   elif echo "$labels" | grep -qxF "$LABEL_NEEDS_TESTS"; then
     stage_tester "$issue_num" "$title"
@@ -309,13 +326,35 @@ process_one_issue() {
 
 main() {
   load_repo_config
-  local next_issue
-  next_issue="$(gh_list_actionable_issues | head -n1)"
-  if [[ -z "$next_issue" ]]; then
+
+  # Free (no Claude cost) — runs every cycle regardless of window/budget.
+  sweep_ready_to_merge
+
+  local now
+  now="$(date +%H:%M)"
+
+  if ! schedule_in_work_window "$now"; then
+    echo "[$(date -u +%FT%TZ)] outside configured work window (${WORK_WINDOW_START}-${WORK_WINDOW_END} ${TZ}) — skipping agent work this cycle"
+    return 0
+  fi
+  if ! budget_has_room; then
+    echo "[$(date -u +%FT%TZ)] spend cap reached for this window (\$$(budget_spent) / \$${MAX_SPEND_PER_WINDOW}) — skipping agent work until the next window"
+    return 0
+  fi
+
+  # Stick with whatever issue is already mid-pipeline until it resolves
+  # (blocked, or done) before picking a new one — one issue drained fully
+  # at a time, not round-robin across everything open.
+  local issue
+  issue="$(gh_pick_active_issue)"
+  if [[ -z "$issue" ]]; then
+    issue="$(gh_pick_new_issue)"
+  fi
+  if [[ -z "$issue" ]]; then
     echo "[$(date -u +%FT%TZ)] no actionable issues this cycle"
     return 0
   fi
-  process_one_issue "$next_issue"
+  process_one_issue "$issue"
 }
 
 main "$@"

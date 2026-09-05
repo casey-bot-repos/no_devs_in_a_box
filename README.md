@@ -27,10 +27,21 @@ it up on its next poll (every 5 minutes by default).
 
 ## How it works
 
-The factory polls your repo's open issues on a schedule and advances exactly
-one issue by exactly one pipeline stage per cycle. All state lives in issue
-**labels** and **comments** — nothing is held in memory, so restarting the
-container loses no progress.
+The factory polls your repo's open issues on a schedule and advances one
+issue by one pipeline stage per cycle — but it sticks with whichever issue
+is already mid-pipeline, working it stage by stage every cycle, until it
+resolves (either `blocked`, or all the way through review) before starting
+the next one. Issues aren't drained round-robin; they're drained one at a
+time, in the order they were opened. All state lives in issue **labels** and
+**comments** — nothing is held in memory, so restarting the container loses
+no progress. The one exception is already-reviewed PRs sitting at
+`ready-to-merge`: those get checked every cycle regardless of which issue is
+currently active, since checking costs no Claude calls.
+
+A brand-new issue takes two poll cycles to show first activity: the first
+cycle just tags it `needs-plan`, the second actually runs the Planner — at
+the 300s default that's up to ~10 minutes of apparent silence before
+anything visible happens.
 
 | Label | Meaning |
 |---|---|
@@ -66,13 +77,33 @@ comment rather than looping forever.
 
 ### Merging
 
-By default every change waits for a human to click merge on the PR. To let
-the factory merge autonomously (once tests pass and the reviewer approves):
-- Add the `auto-merge` label to a specific issue, or
-- Commit `.github/factory.yml` to the target repo with
-  `auto_merge_default: true` (see `config/factory.yml.example`) to make it
-  the default for the whole repo — a per-issue `no-auto-merge` label still
-  overrides that back off.
+By default every change waits for a human to click merge on the PR. **To
+make auto-merge the default** (merge automatically once tests pass and the
+reviewer approves, most issues, most of the time): commit a file to the
+**target repo** — not this tool's repo — at `.github/factory.yml`:
+
+```yaml
+auto_merge_default: true
+```
+
+(Template: `config/factory.yml.example` in this repo.) With that in place,
+every issue auto-merges unless you add `no-auto-merge` to a specific one you
+want to hold back for manual review. Going the other way — leave the repo
+default alone and opt in per issue — just add the `auto-merge` label to
+that one issue instead.
+
+If an auto-merge attempt actually fails (a real merge conflict, a branch
+protection rule, an unmet required check), the factory doesn't retry it
+blindly forever: it comments with the likely reason, drops the `auto-merge`
+label, and leaves the PR at `ready-to-merge` for a human to resolve directly.
+
+**Branches are fully independent per issue** — every issue gets its own
+`factory/issue-<N>` branch and its own PR, so unrelated issues never step on
+each other's work in progress. The one thing v1 does *not* do is detect or
+resolve conflicts *between* issues' PRs: if two issues touch the same file
+and the first one merges (auto or manual) before the second, the second PR
+can end up conflicting with the now-updated default branch, same as it
+would for two human-authored PRs — nothing here rebases it for you.
 
 ## Headless Chrome
 
@@ -96,10 +127,40 @@ recoverable with `git reset`. Don't relax this expecting *more* safety by
 switching to prompted permissions; the container boundary is what's actually
 doing the work either way.
 
+## Scheduling & spend caps
+
+Two independent knobs, both optional, both in `.env`:
+
+- **Work windows** — `WORK_WINDOW_START` / `WORK_WINDOW_END` (24h `HH:MM`,
+  interpreted in `TZ`) restrict *agent* work to a daily window, e.g. nightly
+  11pm-3am:
+  ```
+  WORK_WINDOW_START=23:00
+  WORK_WINDOW_END=03:00
+  TZ=America/Los_Angeles
+  ```
+  Outside the window the factory still polls (cheaply) and still merges
+  already-approved PRs sitting at `ready-to-merge` — it just won't start or
+  advance any Claude-driven pipeline work until the window reopens. Leave
+  both unset to run continuously (the default).
+
+- **Spend cap** — `MAX_SPEND_PER_WINDOW` (USD) caps total Claude spend,
+  tracked from each call's own reported cost, per window (one scheduled
+  window if configured above, otherwise one calendar day). Work pauses once
+  the cap is hit and resumes automatically at the start of the next window.
+  This depends on the installed `claude` CLI reporting `total_cost_usd` in
+  its JSON output — worth a quick check (`docker compose logs` will show
+  the full JSON per call) if spend tracking looks like it's staying at zero.
+
+Unlike issue/label state, spend totals aren't collaboration-relevant, so
+they live as a plain file under `/work/spend/` rather than in GitHub — they
+reset when a new window starts, and are lost only if that volume is wiped.
+
 ## Configuration (`.env`)
 
 See `.env.example`. Key variables: `GITHUB_TOKEN`, `ANTHROPIC_API_KEY`,
-`TARGET_REPO`, `POLL_INTERVAL_SECONDS`, `MAX_RETRIES`, `DRY_RUN`.
+`TARGET_REPO`, `POLL_INTERVAL_SECONDS`, `MAX_RETRIES`, `DRY_RUN`,
+`WORK_WINDOW_START`/`WORK_WINDOW_END`/`TZ`, `MAX_SPEND_PER_WINDOW`.
 
 ## Dry-run mode
 
@@ -127,6 +188,17 @@ Anthropic console and the issue comment trail instead), automatic handling
 of a human pushing directly to a `factory/*` branch (it's detected as
 `blocked` for now), non-Linux installer support (use Docker Desktop and
 `docker compose up` directly).
+
+**Known limitations, not just deferred:**
+- The factory doesn't watch for human review comments left directly on a
+  PR — it only reacts to its own Reviewer role's verdict on the issue. Your
+  options as a human are to merge the PR, push commits to its branch
+  yourself, or relabel/comment on the *issue*.
+- Removing `blocked` doesn't resume the failed stage — it clears all stage
+  labels, so the next cycle treats the issue as brand-new and restarts from
+  Planner. The `factory/issue-<N>` branch and any open PR aren't reset
+  though, so Planner runs against whatever was already left there, not a
+  clean slate.
 
 ### Roadmap: concurrency via sibling containers
 
