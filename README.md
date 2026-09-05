@@ -10,15 +10,13 @@ PRs on your repo.
 ## Quickstart
 
 ```bash
-git clone https://github.com/casey-bot-repos/no_devs_in_a_box.git
-cd no_devs_in_a_box
-./install.sh
+curl -fsSL https://raw.githubusercontent.com/casey-bot-repos/no_devs_in_a_box/main/install.sh | bash
 ```
 
-(This repo is currently private — `git clone` needs your own GitHub
-credentials configured first.)
-
-The installer will:
+That's the whole install. The only thing it needs on your host is Docker
+(installed automatically if missing) and curl/tar — no git, no Node, no `gh`
+CLI, no Claude Code CLI. Everything that touches code, GitHub, or a browser
+runs inside the container it builds. The installer will:
 1. Install Docker if it's missing.
 2. Ask for a GitHub token (`repo` + `issues` scopes), your Anthropic API key,
    and the target repo (`owner/name`).
@@ -57,7 +55,9 @@ factory's hands immediately.
    branch, and posts it as a comment.
 2. **Coder** implements the plan (or a fix, on retry), commits, opens a PR.
 3. **Tester** runs (or writes) tests; the orchestrator independently re-runs
-   the detected test command as the authoritative pass/fail signal.
+   the detected test command as the authoritative pass/fail signal. A headless
+   Chromium is baked into the image (see below), so a target repo's own
+   Playwright/Puppeteer/Cypress e2e suite can run without extra setup.
 4. **Reviewer** reviews the full diff and approves or requests changes.
 
 Failed test/review cycles loop back to the Coder, bounded by `MAX_RETRIES`
@@ -73,6 +73,17 @@ the factory merge autonomously (once tests pass and the reviewer approves):
   `auto_merge_default: true` (see `config/factory.yml.example`) to make it
   the default for the whole repo — a per-issue `no-auto-merge` label still
   overrides that back off.
+
+## Headless Chrome
+
+The image installs Playwright's Chromium build plus the OS-level shared
+libraries any headless Chromium needs (`npx playwright install --with-deps
+chromium` at build time) — not `apt install chromium`, since Ubuntu's apt
+package is a snap wrapper that doesn't run in a container. This means a
+target repo's existing browser-based test suite generally just works via
+`npm test` with no per-repo configuration. It's best-effort: a repo pinned to
+a very different Playwright version may still trigger its own (network)
+download, which the container has the network access to do anyway.
 
 ## Security model
 

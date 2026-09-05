@@ -15,6 +15,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && npm install -g @anthropic-ai/claude-code \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
+# Headless Chrome for target repos' own Playwright/Puppeteer/Cypress test
+# suites, so `npm test` works out of the box with zero per-repo config.
+# Deliberately NOT `apt install chromium` — Ubuntu's chromium package is a
+# snap wrapper that doesn't run in a container. Playwright's installer
+# fetches a real binary plus the OS shared libs any headless Chromium
+# needs, which also benefits Puppeteer/other frameworks' own browser
+# downloads. Best-effort: a repo pinned to a very different Playwright
+# version may still trigger its own (network) download.
+RUN npx --yes playwright install --with-deps chromium
+
 WORKDIR /factory
 COPY orchestrator/ ./orchestrator/
 COPY roles/ ./roles/
